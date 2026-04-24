@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
-import { Activity, Anchor, Clock, DollarSign, Wallet, Search, X, ActivitySquare, History } from 'lucide-react';
+import { Activity, Anchor, Clock, Wallet, Search, X, ActivitySquare, History, Coins } from 'lucide-react';
 import './index.css';
 
 const socket = io('http://localhost:3001');
@@ -20,7 +20,11 @@ function App() {
     socket.on('disconnect', () => setIsConnected(false));
 
     socket.on('whale_discovered', (data) => {
-      setWhales((prev) => [data, ...prev].slice(0, 50)); // Keep last 50
+      setWhales((prev) => {
+        // Prevent duplicates in UI
+        if(prev.find(w => w.hash === data.hash)) return prev;
+        return [data, ...prev].slice(0, 50);
+      });
       setTotalValueUsd((prev) => prev + parseFloat(data.usdValue));
     });
 
@@ -41,10 +45,14 @@ function App() {
 
   const formatTime = (timestamp) => {
     return new Intl.DateTimeFormat('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
     }).format(new Date(timestamp));
+  };
+
+  const formatNumber = (num) => {
+    if (num > 1000) return num.toFixed(0);
+    if (num > 1) return num.toFixed(2);
+    return num.toFixed(6);
   };
 
   const analyzeWallet = async (address) => {
@@ -99,8 +107,7 @@ function App() {
 
         <div className="feed-container">
           <div className="feed-header">
-            <Activity size={20} className="pulse" />
-            Live Whale Feed
+            <Activity size={20} className="pulse" /> Live Whale Feed
           </div>
           
           {whales.length === 0 ? (
@@ -112,9 +119,7 @@ function App() {
             <div className="feed-list">
               {whales.map((whale, index) => (
                 <div key={`${whale.hash}-${index}`} className="whale-item">
-                  <div className="whale-icon">
-                    <Wallet size={24} />
-                  </div>
+                  <div className="whale-icon"><Wallet size={24} /></div>
                   <div className="whale-info">
                     <div className="wallet-address">{whale.wallet}</div>
                     <div className="tx-time">Discovered at {formatTime(whale.timestamp)}</div>
@@ -142,20 +147,75 @@ function App() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <button className="close-btn" onClick={closeModal}><X size={24} /></button>
             
-            <h2 className="modal-title">Wallet Deep Dive</h2>
-            <div className="modal-wallet-address">{selectedWallet}</div>
+            <div className="modal-header-row">
+                <div>
+                    <h2 className="modal-title">Wallet Deep Dive</h2>
+                    <div className="modal-wallet-address">{selectedWallet}</div>
+                </div>
+            </div>
 
             {isAnalyzing ? (
               <div className="loading-state">
                 <ActivitySquare className="pulse" size={48} color="#f59e0b" />
-                <p>Analyzing blockchain history and open positions...</p>
+                <p>Analyzing blockchain history, tokens, and positions...</p>
               </div>
             ) : walletData ? (
               <div className="modal-body">
                 
+                <div className="net-worth-banner">
+                  <span className="nw-label">Estimated Net Worth</span>
+                  <span className="nw-value">{formatCurrency(walletData.totalNetWorthUsd || 0)}</span>
+                  <span className="nw-eth">{parseFloat(walletData.balanceEth).toFixed(4)} ETH</span>
+                </div>
+
+                {walletData.performance && (
+                  <div className="modal-section performance-section">
+                    <div className="perf-header">
+                      <div className={`perf-badge ${walletData.performance.badgeColor}`}>
+                        {walletData.performance.label}
+                      </div>
+                      <h3>Performance Analysis (30D)</h3>
+                    </div>
+                    
+                    <div className="perf-grid">
+                      <div className="perf-card">
+                        <span className="perf-label">Win Rate</span>
+                        <div className="perf-value">{walletData.performance.winRate}%</div>
+                        <div className="progress-bar-bg">
+                          <div className={`progress-bar-fill ${walletData.performance.badgeColor}`} style={{width: `${walletData.performance.winRate}%`}}></div>
+                        </div>
+                      </div>
+                      <div className="perf-card">
+                        <span className="perf-label">Estimated PnL</span>
+                        <div className={`perf-value ${walletData.performance.estimatedPnlUsd >= 0 ? 'text-green' : 'text-red'}`}>
+                          {walletData.performance.estimatedPnlUsd >= 0 ? '+' : ''}{formatCurrency(walletData.performance.estimatedPnlUsd)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="perf-summary">
+                      {walletData.performance.summary}
+                    </div>
+                  </div>
+                )}
+
                 <div className="modal-section">
-                  <h3>Wallet Balance</h3>
-                  <div className="balance-display">{parseFloat(walletData.balanceEth).toFixed(4)} ETH</div>
+                  <h3><Coins size={18} /> Token Portfolio</h3>
+                  {walletData.portfolio && walletData.portfolio.length > 0 ? (
+                      <div className="token-list">
+                          {walletData.portfolio.map((token, idx) => (
+                              <div key={idx} className="token-row">
+                                  <div className="token-name">
+                                      <strong>{token.symbol}</strong>
+                                      <span>{token.name}</span>
+                                  </div>
+                                  <div className="token-bal">{formatNumber(token.balance)}</div>
+                                  <div className="token-usd">{formatCurrency(token.totalUsd)}</div>
+                              </div>
+                          ))}
+                      </div>
+                  ) : (
+                      <p className="no-data">No valuable ERC-20 tokens found.</p>
+                  )}
                 </div>
 
                 <div className="modal-section">
@@ -177,16 +237,15 @@ function App() {
                       ))}
                     </div>
                   ) : (
-                    <p className="no-data">No active margin or lending positions detected on major protocols.</p>
+                    <p className="no-data">No active margin or lending positions detected on Aave.</p>
                   )}
                 </div>
 
                 <div className="modal-section">
-                  <h3>Recent Asset Transfers</h3>
+                  <h3><History size={18} /> Recent Asset Transfers</h3>
                   <div className="history-list">
                     {walletData.recentTransfers && walletData.recentTransfers.map((tx, idx) => (
                       <div key={idx} className="history-item">
-                        <History size={16} color="#94a3b8" />
                         <span className="history-val">{tx.value || '?'} {tx.asset || 'Token'}</span>
                         <span className="history-cat">({tx.category})</span>
                         <a href={`https://etherscan.io/tx/${tx.hash}`} target="_blank" rel="noreferrer" className="history-link">View Tx</a>
