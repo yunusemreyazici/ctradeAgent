@@ -2,16 +2,19 @@ import { ethers } from 'ethers';
 import { config } from '../config';
 import { TradeStrategy } from '../strategy/TradeStrategy';
 import { PriceService } from './PriceService';
+import { DashboardServer } from '../server/DashboardServer';
 
 export class WhaleTracker {
     private provider: ethers.Provider;
     private strategy: TradeStrategy;
     private priceService: PriceService;
+    private dashboardServer: DashboardServer;
 
-    constructor(strategy: TradeStrategy) {
+    constructor(strategy: TradeStrategy, dashboardServer: DashboardServer) {
         this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
         this.strategy = strategy;
         this.priceService = new PriceService();
+        this.dashboardServer = dashboardServer;
     }
 
     public async start() {
@@ -51,6 +54,15 @@ export class WhaleTracker {
                         console.log(`Tx Hash: ${tx.hash}`);
                         console.log(`Value: ${ethValue.toFixed(2)} ETH (~$${usdValue.toFixed(2)})`);
                         
+                        this.dashboardServer.broadcastWhale({
+                            type: 'block',
+                            wallet: tx.from,
+                            hash: tx.hash,
+                            ethValue: ethValue.toFixed(2),
+                            usdValue: usdValue.toFixed(2),
+                            timestamp: Date.now()
+                        });
+
                         if (tx.to) {
                             await this.strategy.evaluateTrade(tx.from, tx.hash, tx.to, tx.value);
                         }
@@ -78,6 +90,15 @@ export class WhaleTracker {
                     console.log(`Tx Hash: ${tx.hash}`);
                     console.log(`Value: ${ethValue.toFixed(2)} ETH (~$${usdValue.toFixed(2)})`);
                     
+                    this.dashboardServer.broadcastWhale({
+                        type: 'mempool',
+                        wallet: tx.from,
+                        hash: tx.hash,
+                        ethValue: ethValue.toFixed(2),
+                        usdValue: usdValue.toFixed(2),
+                        timestamp: Date.now()
+                    });
+
                     if (tx.to) {
                         await this.strategy.evaluateTrade(tx.from, tx.hash, tx.to, tx.value);
                     }

@@ -8,10 +8,12 @@ class WhaleTracker {
     provider;
     strategy;
     priceService;
-    constructor(strategy) {
+    dashboardServer;
+    constructor(strategy, dashboardServer) {
         this.provider = new ethers_1.ethers.JsonRpcProvider(config_1.config.rpcUrl);
         this.strategy = strategy;
         this.priceService = new PriceService_1.PriceService();
+        this.dashboardServer = dashboardServer;
     }
     async start() {
         console.log(`Starting Autonomous Whale Discovery...`);
@@ -47,6 +49,14 @@ class WhaleTracker {
                         console.log(`Whale Wallet: ${tx.from}`);
                         console.log(`Tx Hash: ${tx.hash}`);
                         console.log(`Value: ${ethValue.toFixed(2)} ETH (~$${usdValue.toFixed(2)})`);
+                        this.dashboardServer.broadcastWhale({
+                            type: 'block',
+                            wallet: tx.from,
+                            hash: tx.hash,
+                            ethValue: ethValue.toFixed(2),
+                            usdValue: usdValue.toFixed(2),
+                            timestamp: Date.now()
+                        });
                         if (tx.to) {
                             await this.strategy.evaluateTrade(tx.from, tx.hash, tx.to, tx.value);
                         }
@@ -72,6 +82,14 @@ class WhaleTracker {
                     console.log(`Whale Wallet: ${tx.from}`);
                     console.log(`Tx Hash: ${tx.hash}`);
                     console.log(`Value: ${ethValue.toFixed(2)} ETH (~$${usdValue.toFixed(2)})`);
+                    this.dashboardServer.broadcastWhale({
+                        type: 'mempool',
+                        wallet: tx.from,
+                        hash: tx.hash,
+                        ethValue: ethValue.toFixed(2),
+                        usdValue: usdValue.toFixed(2),
+                        timestamp: Date.now()
+                    });
                     if (tx.to) {
                         await this.strategy.evaluateTrade(tx.from, tx.hash, tx.to, tx.value);
                     }
